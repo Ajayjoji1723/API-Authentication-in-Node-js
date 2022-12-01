@@ -3,6 +3,8 @@ const path = require("path");
 const { open } = require("sqlite");
 const sqlite3 = require("sqlite3");
 const bcrypt = require("bcrypt");
+const jwt  = require("jsonwebtoken");
+const { response } = require("express");
 
 const app = express();
 app.use(express.json());
@@ -26,7 +28,39 @@ const initializeDBAndServer = async () => {
 };
 initializeDBAndServer();
 
-// Get Books API
+// Get Books API and Verify jwtToken
+app.get("/books/", async(request, response)=>{
+  const authHeader = request.headers["authorization"];
+  let jwtToken;
+  if (authHeader !== undefined){
+    jwtToken = authHeader.split(" ")[1];
+  }
+  if (jwtToken === undefined){
+    response.status(400)
+    response.send("Invalid Access Token")
+  }else{
+    jwt.verify(jwtToken, "ajayydcvs", async(error, user)=>{
+      if (error){
+        response.send("Invalid Access Token")
+      }else{
+        const getBookquery = `
+            SELECT 
+              *
+            FROM 
+              book 
+            ORDER BY book_id;
+            `;
+        const booksArray = await db.all(getBookquery);
+        response.send(booksArray)
+      }
+    })
+  }
+
+  
+})
+
+
+//Create user API 
 app.post("/users/", async (request, response) => {
   const { username, name, password, gender, location } = request.body;
   const hashedPassword = await bcrypt.hash(request.body.password, 10);
@@ -64,7 +98,9 @@ app.post("/login", async (request, response) => {
   } else {
     const isPasswordMatched = await bcrypt.compare(password, dbUser.password);
     if (isPasswordMatched === true) {
-      response.send("Login Success!");
+      const payload = ({username: username});
+      const jwtToken = jwt.sign(payload,"ajayydcvs");
+      response.send({jwtToken});
     } else {
       response.status(400);
       response.send("Invalid Password");
