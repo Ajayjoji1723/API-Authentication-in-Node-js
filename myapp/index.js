@@ -5,6 +5,7 @@ const sqlite3 = require("sqlite3");
 const bcrypt = require("bcrypt");
 const jwt  = require("jsonwebtoken");
 const { response } = require("express");
+const { request } = require("http");
 
 const app = express();
 app.use(express.json());
@@ -28,43 +29,55 @@ const initializeDBAndServer = async () => {
 };
 initializeDBAndServer();
 
-// Get Books API and Verify jwtToken
-app.get("/books/", async(request, response)=>{
-  const authHeader = request.headers["authorization"];
+const authenticateToken = (request, response, next) => {
   let jwtToken;
-  if (authHeader !== undefined){
+  const authHeader = request.headers["authorization"];
+  if (authHeader !== undefined) {
     jwtToken = authHeader.split(" ")[1];
   }
-  if (jwtToken === undefined){
-    response.status(400)
-    response.send("Invalid Access Token")
-  }else{
-    jwt.verify(jwtToken, "ajayydcvs", async(error, user)=>{
-      if (error){
-        response.send("Invalid Access Token")
-      }else{
-        const getBookquery = `
-            SELECT 
-              *
-            FROM 
-              book 
-            ORDER BY book_id;
-            `;
-        const booksArray = await db.all(getBookquery);
-        response.send(booksArray)
+  if (jwtToken === undefined) {
+    response.status(401);
+    response.send("Invalid JWT Token");
+  } else {
+    jwt.verify(jwtToken, "ajayydcvs", async (error, payload) => {
+      if (error) {
+        response.status(401);
+        response.send("Invalid JWT Token");
+      } else {
+        request.username = payload.username;
+        next();
       }
-    })
+    });
   }
+};
 
-  
+
+// Get Books API and Verify jwtToken
+app.get("/books/", authenticateToken, async(request, response)=>{
+  const getBookQuery = `
+  SELECT 
+    *
+  FROM 
+    book
+  ORDER BY 
+    book_id`
+  const bookArray = await db.all(getBookQuery);
+  response.send(bookArray) 
 })
 
+//GET User Profiel API 
+app.get("/profile/", authenticateToken, async (request, response) => {
+  let { username } = request;
+  const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`;
+  const userDetails = await db.get(selectUserQuery);
+  response.send(userDetails);
+});
 
 //Create user API 
 app.post("/users/", async (request, response) => {
   const { username, name, password, gender, location } = request.body;
   const hashedPassword = await bcrypt.hash(request.body.password, 10);
-  console.log(hashedPassword);
+  
   const selectUserQuery = `SELECT * FROM user WHERE username = '${username}'`;
   const dbUser = await db.get(selectUserQuery);
   if (dbUser === undefined) {
